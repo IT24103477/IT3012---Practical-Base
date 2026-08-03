@@ -2,14 +2,21 @@
 import random
 import tkinter as tk
 
+DIRECTIONS = {
+    'Up': (0, 1),
+    'Down': (0, -1),
+    'Left': (-1, 0),
+    'Right': (1, 0)
+}
 
 class VisualGridHuntGame:
     """A flexible Pacman-style grid environment with support for configurable opponents and larger scales."""
 
-    def __init__(self, width=10, height=10, num_food=10, num_opponents=2, custom_walls=None, self.toxic_traps=set()):
+    def __init__(self, width=10, height=10, num_food=10, num_opponents=2, custom_walls=None, toxic_traps=None):
         self.width = width
         self.height = height
         self.agent_pos = [0, 0]  # Starting position (x, y)
+        self.agent_dir = 'Right'  # Default direction
 
         if custom_walls is not None:
             self.walls = set(custom_walls)
@@ -27,13 +34,16 @@ class VisualGridHuntGame:
                 self.food_positions.add(pos_tuple)
 
         # Change - IT24103477        
-        self.toxic_traps = set()
-        while len(self.toxic_traps) < 3:
-            tx = random.randint(0, self.width-1)
-            ty = random.randint(0, self.height-1)
-            trap = (tx, ty)
-            if trap != (0,0) and trap not in self.walls and trap not in self.food_positions:
-                self.toxic_traps.add(trap)        
+        if toxic_traps is not None:
+            self.toxic_traps = set(toxic_traps)
+        else:
+            self.toxic_traps = set()
+            while len(self.toxic_traps) < 3:
+                tx = random.randint(0, self.width-1)
+                ty = random.randint(0, self.height-1)
+                trap = (tx, ty)
+                if trap != (0,0) and trap not in self.walls and trap not in self.food_positions:
+                    self.toxic_traps.add(trap)        
 
         # Generate adversarial opponents
         self.opponents = []
@@ -49,16 +59,22 @@ class VisualGridHuntGame:
         self.collision = False
 
     def get_percept(self) -> dict:
-        return {
-            'agent_pos': list(self.agent_pos),
-            'opponent_positions': [list(op) for op in self.opponents],
-            'smells_food': tuple(self.agent_pos) in self.food_positions,
-            'hit_wall': tuple(self.agent_pos) in self.walls,
-            'collision': self.collision,
-            'score': self.score,
-            'remaining_food': len(self.food_positions),
-            'smells_toxin': tuple(self.agent_pos) in self.toxic_traps # Change - IT24103477 
-        }
+       
+               ax, ay = self.agent_pos
+               dx, dy = self.DIRECTIONS[self.agent_dir]
+               fx, fy = ax + dx, ay + dy
+       
+               wall_ahead = (
+                   fx < 0 or fx >= self.width or
+                   fy < 0 or fy >= self.height or
+                   (fx, fy) in self.walls
+               )
+       
+               return {
+                   'wall_ahead': wall_ahead,
+                   'food_here': tuple(self.agent_pos) in self.food_positions,
+                   'smells_toxin': tuple(self.agent_pos) in self.toxic_traps,
+               }
 
     def execute_action(self, action: str):
         self.steps += 1
@@ -204,6 +220,94 @@ class GridGameGUI:
 
         step()
 
+class SimpleReflexAgent:
+
+    def sense_and_act(self, perecpt:dict) -> str:
+
+        if perecpt['food_here']:
+            return 'Take Food'
+        if perecpt['wall_ahead']:
+            return 'Turn Left'
+        return 'Move Forward'
+
+class ModelBasedAgent:
+
+    DIRS = {0: (0, 1), 1: (1, 0), 2: (0, -1), 3: (-1, 0)}
+    
+    def __init__(self):
+           
+            self.x, self.y = 0, 0     
+            self.dir = 1              
+            self.visited = set()      
+            self.scan_turns = 0       
+            self.last_action = None   
+            self.last_percept = None  
+    
+    def _left(self, d):
+            return (d - 1) % 4
+    
+    def _right(self, d):
+            return (d + 1) % 4
+    
+    def sense_and_act(self, percept: dict) -> str:
+            
+            if self.last_action == 'Forward' and self.last_percept is not None \
+                    and not self.last_percept['wall_ahead']:
+                dx, dy = self.DIRS[self.dir]
+                self.x += dx
+                self.y += dy
+            elif self.last_action == 'TurnLeft':
+                self.dir = self._left(self.dir)
+            elif self.last_action == 'TurnRight':
+                self.dir = self._right(self.dir)
+    
+            
+            self.visited.add((self.x, self.y))
+    
+            
+            if percept['food_here']:
+                action = 'Eat'
+                self.scan_turns = 0
+    
+            elif not percept['wall_ahead']:
+                # The cell in front is open.
+                dx, dy = self.DIRS[self.dir]
+                front = (self.x + dx, self.y + dy)
+                turn = self._turn_to_unvisited()
+                if front not in self.visited:
+                    action = 'Forward'            
+                    self.scan_turns = 0
+                elif turn is not None and self.scan_turns < 3:
+                    action = turn                 
+                    self.scan_turns += 1
+                else:
+                    action = 'Forward'            
+                    self.scan_turns = 0
+    
+            else:
+                
+                turn = self._turn_to_unvisited()
+                action = turn if (turn is not None and self.scan_turns < 4) else 'TurnRight'
+                self.scan_turns += 1
+    
+            
+            self.last_action = action
+            self.last_percept = percept
+            return action
+    
+    def _turn_to_unvisited(self):
+            
+            ldx, ldy = self.DIRS[self._left(self.dir)]
+            rdx, rdy = self.DIRS[self._right(self.dir)]
+            left_cell = (self.x + ldx, self.y + ldy)
+            right_cell = (self.x + rdx, self.y + rdy)
+    
+            if left_cell not in self.visited:      
+                return 'TurnLeft'
+            if right_cell not in self.visited:     
+                return 'TurnRight'
+            return None   
+    
 
 if __name__ == "__main__":
     root = tk.Tk()
