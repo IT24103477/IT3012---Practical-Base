@@ -234,7 +234,7 @@ class GridGameGUI:
 
 if __name__ == "__main__":
     
-    ACTIVE_ALGO = "DFS"
+    ACTIVE_ALGO = "A*"
 
     agent = SearchAgent(active_algo=ACTIVE_ALGO)
 
