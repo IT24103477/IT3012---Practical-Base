@@ -1,6 +1,7 @@
 # agent.py  -  Lab 03: Uninformed Search (BFS / DFS / UCS)
 from collections import deque
 import heapq
+import math
 
 STEP_ACTIONS = {
     (0, 1): 'Up',
@@ -38,6 +39,8 @@ class SearchAgent:
                 self.plan = self.dfs_search(start, goal, walls, grid)
             elif self.active_algo == 'UCS':
                 self.plan = self.ucs_search(start, goal, walls, grid)
+            elif self.active_algo == 'A*':
+                self.plan = self.astar_search(start, goal, walls, grid)
             else:
                 self.plan = self.bfs_search(start, goal, walls, grid)
 
@@ -105,3 +108,85 @@ class SearchAgent:
                     counter += 1
                     heapq.heappush(frontier, (new_cost, counter, npos, path + [action]))
         return []
+
+    def manhattan_distance(self, pos, goal):
+        """Calculate the Manhattan distance between two positions."""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal):
+        """Calculate the Euclidean distance between two positions."""
+        return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
+
+
+    def astar_search(self, start, goal, walls, grid, heuristic_type='manhattan'):
+        """A* search algorithm using the specified heuristic.
+        
+        A* evaluates nodes by combining the path cost so far, g(n), and the estimated cost 
+        to the goal, h(n). The evaluation function is f(n) = g(n) + h(n).
+        """
+      
+        if heuristic_type == 'euclidean':
+            heuristic = self.euclidean_distance
+        else:
+            heuristic = self.manhattan_distance
+        
+       
+        frontier = []
+        reached_states = set()
+        
+        
+        g_cost = 0
+        h_cost = heuristic(start, goal)
+        f_cost = g_cost + h_cost
+        heapq.heappush(frontier, (f_cost, g_cost, start, []))
+        
+        
+        while frontier:
+           
+            f_cost, g_cost, pos, path = heapq.heappop(frontier)
+            
+            
+            if pos == goal:
+                return path
+            
+           
+            if pos in reached_states:
+                continue
+            reached_states.add(pos)
+            
+          
+            for action, npos in self._neighbors(pos, walls, grid):
+                
+                if npos not in reached_states:
+                    
+                    g_new = g_cost + 1
+                    h_new = heuristic(npos, goal)
+                    f_new = g_new + h_new
+                    heapq.heappush(frontier, (f_new, g_new, npos, path + [action]))
+        
+        return []
+
+
+# Testing Checkpoint: Print the outputs of both functions for a mock start position (0, 0) and goal (3, 4)
+if __name__ == "__main__":
+    agent = SearchAgent()
+    start_pos = (0, 0)
+    goal_pos = (3, 4)
+    
+    manhattan = agent.manhattan_distance(start_pos, goal_pos)
+    euclidean = agent.euclidean_distance(start_pos, goal_pos)
+    
+    print(f"Start position: {start_pos}")
+    print(f"Goal position: {goal_pos}")
+    print(f"Manhattan distance: {manhattan}")
+    print(f"Euclidean distance: {euclidean}")
+    
+    # Test A* search with a simple grid
+    print("\n--- A* Search Test ---")
+    walls = {(1, 1), (1, 2)}
+    grid_size = (5, 5)
+    path = agent.astar_search(start_pos, goal_pos, walls, grid_size)
+    print(f"A* Path (Manhattan heuristic): {path}")
+    
+    path_euclidean = agent.astar_search(start_pos, goal_pos, walls, grid_size, heuristic_type='euclidean')
+    print(f"A* Path (Euclidean heuristic): {path_euclidean}")
