@@ -1,7 +1,8 @@
-# agent.py  -  Lab 03: Uninformed Search (BFS / DFS / UCS)
 from collections import deque
 import heapq
 import math
+
+from logic_engine import KnowledgeBase
 
 STEP_ACTIONS = {
     (0, 1): 'Up',
@@ -12,17 +13,17 @@ STEP_ACTIONS = {
 
 
 class SearchAgent:
-    """A goal-based PLANNING agent.
-
-    Instead of reacting to one cell at a time, it uses the world model exposed in
-    the percept (grid size, walls, all food) to SEARCH offline for a full path to
-    the nearest food, stores that path in self.plan, then plays it back one action
-    per tick. Switch self.active_algo between 'BFS', 'DFS', 'UCS' to compare them.
-    """
-
+    
     def __init__(self, active_algo='BFS'):
-        self.plan = []                 
-        self.active_algo = active_algo 
+        self.plan = []
+        self.active_algo = active_algo
+
+        # Lab 07: Knowledge Base holding the game's safety rules (Horn clauses)
+        self.kb = KnowledgeBase()
+        # Rule 1: TargetVisible AND HasDust => SafeToEngage
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        # Rule 2: SafeToEngage AND BloodseekerMissing => Retreat
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
     
     def sense_and_act(self, percept: dict) -> str:
@@ -40,7 +41,21 @@ class SearchAgent:
             elif self.active_algo == 'UCS':
                 self.plan = self.ucs_search(start, goal, walls, grid)
             elif self.active_algo == 'A*':
-                self.plan = self.astar_search(start, goal, walls, grid)
+                
+                tile_facts = {
+                    (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],  
+                    (0, 1): ['TargetVisible', 'HasDust'],                        
+                }
+                self.plan = self.astar_search(start, goal, walls, grid, tile_facts=tile_facts)
+
+                
+                if not self.plan:
+                    for other in sorted(foods, key=lambda f: self.manhattan_distance(start, f)):
+                        if other == goal:
+                            continue
+                        self.plan = self.astar_search(start, other, walls, grid, tile_facts=tile_facts)
+                        if self.plan:
+                            break
             else:
                 self.plan = self.bfs_search(start, goal, walls, grid)
 
@@ -50,11 +65,9 @@ class SearchAgent:
 
     
     def _closest_food(self, start, foods):
-        """Pick the food with the smallest Manhattan distance to the agent."""
         return min(foods, key=lambda f: abs(f[0] - start[0]) + abs(f[1] - start[1]))
 
     def _neighbors(self, pos, walls, grid):
-        """Legal 4-connected moves from pos as (action, new_pos) pairs."""
         w, h = grid
         x, y = pos
         out = []
@@ -118,13 +131,11 @@ class SearchAgent:
         return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
 
 
-    def astar_search(self, start, goal, walls, grid, heuristic_type='manhattan'):
-        """A* search algorithm using the specified heuristic.
+    def astar_search(self, start, goal, walls, grid, heuristic_type='manhattan', tile_facts=None):
         
-        A* evaluates nodes by combining the path cost so far, g(n), and the estimated cost 
-        to the goal, h(n). The evaluation function is f(n) = g(n) + h(n).
-        """
-      
+        if tile_facts is None:
+            tile_facts = {}
+
         if heuristic_type == 'euclidean':
             heuristic = self.euclidean_distance
         else:
@@ -155,10 +166,19 @@ class SearchAgent:
             reached_states.add(pos)
             
           
+            
             for action, npos in self._neighbors(pos, walls, grid):
-                
+
                 if npos not in reached_states:
+
                     
+                    self.kb.clear_facts()                       
+                    for fact in tile_facts.get(npos, []):       
+                        self.kb.tell_fact(fact)
+                    self.kb.forward_chain()                     
+                    if 'Retreat' in self.kb.facts:              
+                        continue                                
+
                     g_new = g_cost + 1
                     h_new = heuristic(npos, goal)
                     f_new = g_new + h_new
@@ -167,7 +187,7 @@ class SearchAgent:
         return []
 
 
-# Testing Checkpoint: Print the outputs of both functions for a mock start position (0, 0) and goal (3, 4)
+
 if __name__ == "__main__":
     agent = SearchAgent()
     start_pos = (0, 0)
